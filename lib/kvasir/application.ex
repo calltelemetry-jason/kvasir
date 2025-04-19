@@ -21,6 +21,10 @@ defmodule Kvasir.Application do
   Start a syslog server under the Server supervisor. The options provided
   as the first parameter could be consulted in
   `Kvasir.Syslog.Server.start_link/1`.
+
+  Options:
+  - `port`: The port to listen on (default: 5544)
+  - `protocol`: The protocol to use, either `:udp` or `:tcp` (default: `:udp`)
   """
   def start_server(opts) do
     DynamicSupervisor.start_child(Server.Supervisor, {Server, opts})
