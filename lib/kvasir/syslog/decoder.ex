@@ -22,14 +22,15 @@ defmodule Kvasir.Syslog.Decoder do
   @doc false
   def handle_events(events, _from, state) do
     events
-    |> Enum.map(fn event ->
-      case Parser.parse(event) do
+    |> Enum.map(fn {message, ip_address} ->
+      case Parser.parse(message) do
         {:error, reason} ->
           Logger.error("dropping message: #{inspect(reason)}")
           nil
 
         syslog ->
-          syslog
+          # Set the IP address in the Syslog struct
+          Kvasir.Syslog.set_ip_address(syslog, ip_address)
       end
     end)
     |> Enum.reject(&is_nil/1)

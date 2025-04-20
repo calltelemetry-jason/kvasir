@@ -20,6 +20,7 @@ defmodule Syslog.DecoderTest do
       app_name: "myproc",
       facility: :local4,
       hostname: "192.0.2.1",
+      ip_address: "127.0.0.1",
       message: "%% It's time to make the do-nuts.",
       process_id: "8710",
       severity: :notice,
@@ -36,6 +37,8 @@ defmodule Syslog.DecoderTest do
 
     refute_receive _
   end
+
+  # We don't need this test anymore since we're not handling nil IP addresses specially
 
   defp send_msg(port, syslog_msg) do
     {:ok, socket} = :gen_udp.open(0)

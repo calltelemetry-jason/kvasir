@@ -74,8 +74,10 @@ defmodule Kvasir.Syslog.Server do
   # Handle UDP messages
   @impl GenStage
   @doc false
-  def handle_info({:udp, socket, _ip, _port, message}, {protocol, socket} = state) when protocol == :udp do
-    {:noreply, [message], state}
+  def handle_info({:udp, socket, ip, _port, message}, {protocol, socket} = state) when protocol == :udp do
+    # Convert IP tuple to string format
+    ip_str = :inet.ntoa(ip) |> to_string()
+    {:noreply, [{message, ip_str}], state}
   end
 
   # Accept new TCP connections
@@ -121,10 +123,13 @@ defmodule Kvasir.Syslog.Server do
     # Find the client reference by looking up the socket in our clients map
     client_ref = Enum.find_value(clients, fn {ref, sock} -> if sock == client_socket, do: ref, else: nil end)
     if client_ref do
-      # If we found the client, forward the message to subscribers
-      {:noreply, [message], state}
+      # If we found the client, get the IP address
+      {:ok, {ip, _port}} = :inet.peername(client_socket)
+      ip_str = :inet.ntoa(ip) |> to_string()
+      {:noreply, [{message, ip_str}], state}
+      # The return is handled in the case statement above
     else
-      # If client not found (unusual case), ignore the message
+      # If client not found (unexpected), ignore the message
       {:noreply, [], state}
     end
   end

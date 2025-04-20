@@ -23,7 +23,7 @@ defmodule Syslog.ServerTest do
       :gen_udp.send(socket, {127, 0, 0, 1}, port, syslog_msg)
       :gen_udp.close(socket)
 
-      assert_receive [^syslog_msg]
+      assert_receive [{^syslog_msg, "127.0.0.1"}]
     end
   end
 
@@ -46,9 +46,13 @@ defmodule Syslog.ServerTest do
 
       {:ok, socket} = :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false])
       :ok = :gen_tcp.send(socket, syslog_msg)
+
+      # Wait for the message to be received before closing the socket
+      assert_receive [{^syslog_msg, "127.0.0.1"}], 1000
+
+      # Now close the socket
       :gen_tcp.close(socket)
 
-      assert_receive [^syslog_msg], 1000
     end
 
     test "multiple client connections", %{port: port, server: _server} do
@@ -66,15 +70,20 @@ defmodule Syslog.ServerTest do
       :ok = :gen_tcp.send(socket2, msg2)
       :ok = :gen_tcp.send(socket3, msg3)
 
-      # Close all connections
+      # Verify all messages are received (order may vary)
+      assert_receive [{message1, ip_address1}], 1000
+      assert_receive [{message2, ip_address2}], 1000
+      assert_receive [{message3, ip_address3}], 1000
+
+      # Close all connections after messages are received
       :gen_tcp.close(socket1)
       :gen_tcp.close(socket2)
       :gen_tcp.close(socket3)
 
-      # Verify all messages are received (order may vary)
-      assert_receive [message1], 1000
-      assert_receive [message2], 1000
-      assert_receive [message3], 1000
+      # For TCP connections, we expect the IP addresses to be "127.0.0.1" in our test environment
+      assert ip_address1 == "127.0.0.1"
+      assert ip_address2 == "127.0.0.1"
+      assert ip_address3 == "127.0.0.1"
 
       # Check that all messages were received (regardless of order)
       assert message1 in [msg1, msg2, msg3]
@@ -92,10 +101,14 @@ defmodule Syslog.ServerTest do
 
       {:ok, socket} = :gen_tcp.connect({127, 0, 0, 1}, port, [:binary, active: false])
       :ok = :gen_tcp.send(socket, large_msg)
-      :gen_tcp.close(socket)
 
       # Since TCP might split the message, we'll check if we receive any message containing our payload
-      assert_receive [received_msg], 2000
+      assert_receive [{received_msg, ip_address}], 2000
+
+      # Close the socket after the message is received
+      :gen_tcp.close(socket)
+      # For TCP connections, we expect the IP address to be "127.0.0.1" in our test environment
+      assert ip_address == "127.0.0.1"
       assert String.contains?(received_msg, large_payload)
     end
 
@@ -127,6 +140,7 @@ defmodule Syslog.ServerTest do
       {_protocol, _socket, clients_after_close} = state_after_close
       assert map_size(clients_after_close) == initial_client_count
     end
+
   end
 
   test "default protocol is UDP" do
