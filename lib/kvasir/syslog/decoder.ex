@@ -29,8 +29,8 @@ defmodule Kvasir.Syslog.Decoder do
           nil
 
         syslog ->
-          # Set the IP address in the Syslog struct
-          Kvasir.Syslog.set_ip_address(syslog, ip_address)
+          # Set the raw IP address (raw peer IP) in the Syslog struct
+          Kvasir.Syslog.set_raw_ip_address(syslog, ip_address)
       end
     end)
     |> Enum.reject(&is_nil/1)

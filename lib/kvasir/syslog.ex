@@ -80,6 +80,7 @@ defmodule Kvasir.Syslog do
           version: nil | pos_integer(),
           hostname: nil | String.t(),
           ip_address: nil | String.t(),
+          raw_ip_address: nil | String.t(),
           app_name: nil | String.t(),
           process_id: nil | String.t(),
           message_id: nil | String.t(),
@@ -94,6 +95,7 @@ defmodule Kvasir.Syslog do
             version: 1,
             hostname: nil,
             ip_address: nil,
+            raw_ip_address: nil,
             app_name: nil,
             process_id: nil,
             message_id: nil,
@@ -246,7 +248,7 @@ defmodule Kvasir.Syslog do
     get_facility(facility) * 8 + get_severity(severity)
   end
 
-  ~w[ version hostname ip_address app_name process_id message_id timestamp message ]a
+  ~w[ version hostname ip_address raw_ip_address app_name process_id message_id timestamp message ]a
   |> Enum.map(fn key ->
     fname = String.to_atom("set_#{to_string(key)}")
 
