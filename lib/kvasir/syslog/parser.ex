@@ -68,6 +68,12 @@ defmodule Kvasir.Syslog.Parser do
   defp parse_prival({"<" <> rest_message, syslog}) do
     case Integer.parse(rest_message) do
       {prival, ">" <> rest_message} ->
+        # Handle additional number after PRI (e.g., "<189>8103: Apr 20...")
+        rest_message = case Regex.run(~r/^([0-9]+): /, rest_message) do
+          [match, _number] -> String.replace(rest_message, match, "", global: false)
+          nil -> rest_message
+        end
+
         syslog
         |> Syslog.set_severity(prival &&& 7)
         |> Syslog.set_facility(prival >>> 3)
@@ -135,9 +141,9 @@ defmodule Kvasir.Syslog.Parser do
           # Convert 12-hour format to 24-hour if AM/PM is present
           time_24h = cond do
             am_pm == "PM" && !String.starts_with?(time, "12") ->
-              "#{String.to_integer(String.slice(time, 0, 2)) + 12}#{String.slice(time, 2..-1)}"
+              "#{String.to_integer(String.slice(time, 0, 2)) + 12}#{String.slice(time, 2..-1//1)}"
             am_pm == "AM" && String.starts_with?(time, "12") ->
-              "00#{String.slice(time, 2..-1)}"
+              "00#{String.slice(time, 2..-1//1)}"
             true ->
               time
           end
