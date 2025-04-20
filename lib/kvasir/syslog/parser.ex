@@ -105,6 +105,8 @@ defmodule Kvasir.Syslog.Parser do
   defp parse_old_timestamp({message, syslog}) do
     [
       ~r/^([0-9]{4}) ([A-Z][a-z]{2}) {1,2}([0-9]{1,2}) ([0-9]{2}:[0-9]{2}:[0-9]{2})(?: ([A-Z]{2,4}|TZ-[0-9]{1,2}))? (.*)$/,
+      # Cisco CUCM format: "Oct 14 2015 05:50:19 AM.484 UTC :  %UC_AUDITLOG..."
+      ~r/^([A-Z][a-z]{2}) {1,2}([0-9]{1,2}) ([0-9]{4}) ([0-9]{2}:[0-9]{2}:[0-9]{2})(?: (AM|PM))?(?:\.([0-9]{1,3}))? (UTC|[A-Z]{2,4}|TZ-[0-9]{1,2})?(?: *: *)? (.*)$/,
       ~r/^([A-Z][a-z]{2}) {1,2}([0-9]{1,2}) ([0-9]{2}:[0-9]{2}:[0-9]{2})(?: ([A-Z]{2,4}|TZ-[0-9]{1,2}))? ([0-9]{4}) (.*)$/,
       ~r/^([A-Z][a-z]{2}) {1,2}([0-9]{1,2}) ([0-9]{2}:[0-9]{2}:[0-9]{2})(?: ([A-Z]{2,4}|TZ-[0-9]{1,2}))? (.*)$/
     ]
@@ -127,6 +129,47 @@ defmodule Kvasir.Syslog.Parser do
           year = get_year(year1, year2, Date.utc_today().year)
           {:ok, datetime, _} = DateTime.from_iso8601("#{year}-#{month(month)}-#{day}T#{time}Z")
           {:halt, {message, Syslog.set_timestamp(syslog, datetime)}}
+
+        [month, day, year, time, am_pm, ms, tz, message] ->
+          # Handle Cisco CUCM format: "Oct 14 2015 05:50:19 AM.484 UTC"
+          # Convert 12-hour format to 24-hour if AM/PM is present
+          time_24h = cond do
+            am_pm == "PM" && !String.starts_with?(time, "12") ->
+              "#{String.to_integer(String.slice(time, 0, 2)) + 12}#{String.slice(time, 2..-1)}"
+            am_pm == "AM" && String.starts_with?(time, "12") ->
+              "00#{String.slice(time, 2..-1)}"
+            true ->
+              time
+          end
+
+          # Add milliseconds if present
+          time_with_ms = if ms, do: "#{time_24h}.#{ms}", else: time_24h
+
+          # Set timezone or default to UTC
+          timezone = cond do
+            tz == "UTC" -> "Z"
+            tz -> tz(tz)
+            true -> "Z"
+          end
+
+          # Format the date properly with leading zeros for day
+          padded_day = String.pad_leading(day, 2, "0")
+
+          iso_datetime = "#{year}-#{month(month)}-#{padded_day}T#{time_with_ms}#{timezone}"
+
+          case DateTime.from_iso8601(iso_datetime) do
+            {:ok, datetime, _} ->
+              {:halt, {message, Syslog.set_timestamp(syslog, datetime)}}
+            {:error, _reason} ->
+              # If milliseconds cause issues, try without them
+              iso_datetime_no_ms = "#{year}-#{month(month)}-#{padded_day}T#{time_24h}#{timezone}"
+              case DateTime.from_iso8601(iso_datetime_no_ms) do
+                {:ok, datetime, _} ->
+                  {:halt, {message, Syslog.set_timestamp(syslog, datetime)}}
+                {:error, _} ->
+                  {:cont, error}
+              end
+          end
 
         [year1, month, day, time, "TZ" <> _ = tz, message] ->
           year = get_year(year1, "", Date.utc_today().year)
@@ -265,7 +308,42 @@ defmodule Kvasir.Syslog.Parser do
     end
   end
 
+  # Handle Cisco CUCM structured data format: %[ key=value][ key=value]
+  defp parse_old_structured_data({"%[" <> _ = message, syslog}) do
+    parse_cisco_structured_data({message, syslog})
+  end
+
   defp parse_old_structured_data({message, syslog}), do: {message, syslog}
+
+  # Parse Cisco CUCM structured data format
+  defp parse_cisco_structured_data({message, syslog}) do
+    # Extract all [key=value] patterns
+    pattern = ~r/\[\s*([^=\]]+)\s*=\s*([^\]]*)\]/
+
+    # Find all matches in the message
+    matches = Regex.scan(pattern, message)
+
+    # Convert matches to a map of key-value pairs
+    if matches != [] do
+      params = Enum.reduce(matches, %{}, fn [_, key, value], acc ->
+        Map.put(acc, String.trim(key), String.trim(value))
+      end)
+
+      # Add each key-value pair directly to the structured data
+      syslog = Enum.reduce(params, syslog, fn {key, value}, acc ->
+        # Use the key as the SD-ID and create a simple param with "value" as the key
+        Syslog.add_structured_data(acc, key, %{"value" => value})
+      end)
+
+      # Find the end of the structured data section
+      case Regex.run(~r/\]:\s*(.*)$/, message) do
+        [_, remaining] -> {remaining, syslog}
+        nil -> {message, syslog}
+      end
+    else
+      {message, syslog}
+    end
+  end
 
   defp parse_structured_data({{:error, _} = error, syslog}), do: {error, syslog}
 
