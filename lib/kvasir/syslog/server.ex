@@ -124,6 +124,9 @@ defmodule Kvasir.Syslog.Server do
     client_ref = Enum.find_value(clients, fn {ref, sock} -> if sock == client_socket, do: ref, else: nil end)
     if client_ref do
       # If we found the client, get the IP address
+      IO.puts("Received message from client: #{inspect(message)}")
+      IO.puts("Client socket: #{inspect(client_socket)}")
+      IO.puts("IP address: #{inspect(:inet.peername(client_socket))}")
       case :inet.peername(client_socket) do
         {:ok, {ip, _port}} ->
           ip_str = :inet.ntoa(ip) |> to_string()
