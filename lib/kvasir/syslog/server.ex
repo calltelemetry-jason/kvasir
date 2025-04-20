@@ -93,6 +93,14 @@ defmodule Kvasir.Syslog.Server do
         # In active mode, incoming data is automatically sent as messages to this process
         :ok = :inet.setopts(client, [active: true])
 
+        # Get the peer IP address and port at accept time
+        peer_info = case :inet.peername(client) do
+          {:ok, {ip, port}} ->
+            %{socket: client, ip: ip, ip_str: to_string(:inet.ntoa(ip)), port: port}
+          {:error, _reason} ->
+            %{socket: client, ip: nil, ip_str: "nil", port: nil}
+        end
+
         # Store client socket with a unique reference as key for later identification
         ref = make_ref()
 
@@ -101,7 +109,7 @@ defmodule Kvasir.Syslog.Server do
         send(self(), :accept)
 
         # Return updated state with the new client added to the clients map
-        {:noreply, [], {protocol, socket, Map.put(clients, ref, client)}}
+        {:noreply, [], {protocol, socket, Map.put(clients, ref, peer_info)}}
 
       {:error, :timeout} ->
         # No pending connections, schedule another accept operation
@@ -120,25 +128,18 @@ defmodule Kvasir.Syslog.Server do
   # When a TCP socket is in active mode, incoming data is automatically
   # sent to the controlling process (this GenStage) as {:tcp, socket, data} messages
   def handle_info({:tcp, client_socket, message}, {protocol, _socket, clients} = state) when protocol == :tcp do
-    # Find the client reference by looking up the socket in our clients map
-    client_ref = Enum.find_value(clients, fn {ref, sock} -> if sock == client_socket, do: ref, else: nil end)
-    if client_ref do
-      # If we found the client, get the IP address
-      IO.puts("Received message from client: #{inspect(message)}")
-      IO.puts("Client socket: #{inspect(client_socket)}")
-      IO.puts("IP address: #{inspect(:inet.peername(client_socket))}")
-      case :inet.peername(client_socket) do
-        {:ok, {ip, _port}} ->
-          ip_str = :inet.ntoa(ip) |> to_string()
-          {:noreply, [{message, ip_str}], state}
-        {:error, _reason} ->
-          # If we can't get the peer name (e.g., socket closed), use a placeholder IP
-          {:noreply, [{message, "unknown"}], state}
-      end
-      # The return is handled in the case statement above
-    else
-      # If client not found (unexpected), ignore the message
-      {:noreply, [], state}
+    # Find the client by looking up the socket in our clients map
+    client_entry = Enum.find(clients, fn {_ref, client_info} ->
+      client_info.socket == client_socket
+    end)
+
+    case client_entry do
+      {_ref, client_info} ->
+        # Use the IP string we stored at accept time
+        {:noreply, [{message, client_info.ip_str}], state}
+      nil ->
+        # If client not found (unexpected), ignore the message
+        {:noreply, [], state}
     end
   end
 
@@ -147,13 +148,17 @@ defmodule Kvasir.Syslog.Server do
   # This allows us to clean up the connection and remove it from our state
   def handle_info({:tcp_closed, client_socket}, {protocol, socket, clients} = state) when protocol == :tcp do
     # Find the client reference by looking up the socket in our clients map
-    client_ref = Enum.find_value(clients, fn {ref, sock} -> if sock == client_socket, do: ref, else: nil end)
-    if client_ref do
-      # If we found the client, remove it from our state
-      {:noreply, [], {protocol, socket, Map.delete(clients, client_ref)}}
-    else
-      # If client not found (unusual case), keep state unchanged
-      {:noreply, [], state}
+    client_entry = Enum.find(clients, fn {_ref, client_info} ->
+      client_info.socket == client_socket
+    end)
+
+    case client_entry do
+      {ref, _client_info} ->
+        # If we found the client, remove it from our state
+        {:noreply, [], {protocol, socket, Map.delete(clients, ref)}}
+      nil ->
+        # If client not found (unusual case), keep state unchanged
+        {:noreply, [], state}
     end
   end
 
