@@ -159,6 +159,7 @@ defmodule Kvasir.Syslog.ParserTest do
       assert result.severity == :notice
       assert result.rfc == :rfc3164
       assert result.timestamp == ~U[2019-05-01 07:10:40.781Z]
+      assert result.hostname == nil  # Hostname should be nil for Cisco CUCM logs
 
       # Verify structured data is parsed correctly
       assert Map.has_key?(result.structured_data, "UserID")
@@ -193,6 +194,7 @@ defmodule Kvasir.Syslog.ParserTest do
       assert result.severity == :notice
       assert result.rfc == :rfc3164
       assert result.timestamp == ~U[2025-04-20 22:45:20.601Z]
+      assert result.hostname == nil  # Hostname should be nil for Cisco CUCM logs
 
       # Verify structured data is parsed correctly
       assert Map.has_key?(result.structured_data, "UserID")

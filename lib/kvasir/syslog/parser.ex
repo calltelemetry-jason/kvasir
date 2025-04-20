@@ -261,12 +261,23 @@ defmodule Kvasir.Syslog.Parser do
   defp parse_string({"- " <> rest_message, syslog}, _f, _name, _size), do: {rest_message, syslog}
 
   defp parse_string({message, syslog}, f, name, size) do
-    case String.split(message, " ", parts: 2) do
-      [value, rest_message] when byte_size(value) in 1..size//1 ->
-        {rest_message, f.(syslog, value)}
+    # For structured messages that start with "%" or have a colon followed by spaces and "%",
+    # skip hostname parsing as these are likely structured logs without a hostname
+    if name == "HOSTNAME" && (
+         String.starts_with?(message, "%") ||
+         Regex.match?(~r/^: +%/, message) ||
+         Regex.match?(~r/^[A-Z]{2,4} +: +%/, message)
+       ) do
+      # Skip hostname parsing for structured logs
+      {message, syslog}
+    else
+      case String.split(message, " ", parts: 2) do
+        [value, rest_message] when byte_size(value) in 1..size//1 ->
+          {rest_message, f.(syslog, value)}
 
-      _ ->
-        {{:error, "#{name} invalid"}, syslog}
+        _ ->
+          {{:error, "#{name} invalid"}, syslog}
+      end
     end
   end
 
