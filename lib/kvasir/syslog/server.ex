@@ -124,9 +124,14 @@ defmodule Kvasir.Syslog.Server do
     client_ref = Enum.find_value(clients, fn {ref, sock} -> if sock == client_socket, do: ref, else: nil end)
     if client_ref do
       # If we found the client, get the IP address
-      {:ok, {ip, _port}} = :inet.peername(client_socket)
-      ip_str = :inet.ntoa(ip) |> to_string()
-      {:noreply, [{message, ip_str}], state}
+      case :inet.peername(client_socket) do
+        {:ok, {ip, _port}} ->
+          ip_str = :inet.ntoa(ip) |> to_string()
+          {:noreply, [{message, ip_str}], state}
+        {:error, _reason} ->
+          # If we can't get the peer name (e.g., socket closed), use a placeholder IP
+          {:noreply, [{message, "unknown"}], state}
+      end
       # The return is handled in the case statement above
     else
       # If client not found (unexpected), ignore the message
