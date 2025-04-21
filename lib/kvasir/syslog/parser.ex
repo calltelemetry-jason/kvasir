@@ -45,7 +45,9 @@ defmodule Kvasir.Syslog.Parser do
     |> parse_message()
     |> then(fn
       {"", syslog} -> syslog
-      {{:error, reason}, _syslog} -> {:error, {reason, message}}
+      {{:error, reason}, _syslog} ->
+        # Fall back to RFC3164 parsing for invalid RFC5424 messages
+        {:error, {reason, message}}
     end)
   end
 
@@ -435,6 +437,12 @@ defmodule Kvasir.Syslog.Parser do
 
   defp parse_old_message({{:error, "PRI " <> _}, syslog}, message) do
     {"", Syslog.set_message(syslog, message)}
+  end
+
+  # Handle case where message is an error tuple from timestamp parsing
+  defp parse_old_message({{:error, _error_message}, syslog}, complete_message) do
+    # Use the complete original message as the message content
+    {"", Syslog.set_message(syslog, complete_message)}
   end
 
   defp parse_old_message({message, syslog}, _complete_message) do
